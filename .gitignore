@@ -1,0 +1,28 @@
+# Secrets - never commit the real key. .env.example is the template that ships.
+.env
+
+# Rebuilt per machine by setup.sh; a copied venv or node_modules does not work
+# on another computer.
+.venv/
+node_modules/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Generated at runtime: the database, uploaded photographs, and PDF reports.
+# Delete these and setup.sh will recreate the database with sample rows.
+backend/compliance.db
+backend/uploads/scan_*
+backend/reports/
+
+# Build output
+frontend/dist/
+
+# Editor and OS noise
+.vscode/
+.idea/
+.claude/
+CLAUDE.md
+.DS_Store
+Thumbs.db

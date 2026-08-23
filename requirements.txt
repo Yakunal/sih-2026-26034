@@ -1,0 +1,17 @@
+# Backend dependencies for the Legal Metrology Compliance Checker (SIH26034)
+#
+# Install:
+#   python -m venv .venv
+#   .venv/Scripts/python.exe -m pip install -r requirements.txt     (Windows)
+#   source .venv/bin/activate && pip install -r requirements.txt    (Linux/macOS)
+#
+# Versions below are the ones this project was actually built and tested against
+# on Python 3.14.3 (Windows 11).
+
+fastapi==0.141.1           # web framework for the REST API
+uvicorn[standard]==0.52.4  # ASGI server that runs FastAPI
+python-multipart==0.0.32   # lets FastAPI accept file uploads (multipart/form-data)
+python-dotenv==1.2.3       # reads GEMINI_API_KEY from the .env file
+google-genai==2.19.0       # official Google Gemini SDK (image -> JSON extraction)
+pillow==12.3.0             # image handling + drawing the demo label images
+reportlab==5.0.1           # generates the PDF compliance report

@@ -1,0 +1,80 @@
+/*
+  index.css — the one place colours, fonts and shared element styles are defined.
+
+  Tailwind v4 keeps design tokens in CSS instead of a JS config file. Everything
+  inside @theme below becomes a utility class automatically: --color-primary
+  gives you bg-primary, text-primary, border-primary, and so on.
+
+  So if the palette has to change, it changes here and nowhere else.
+*/
+
+@import 'tailwindcss';
+
+/* The Outfit typeface, bundled locally so the demo works with no internet. */
+@import '@fontsource/outfit/400.css';
+@import '@fontsource/outfit/500.css';
+@import '@fontsource/outfit/600.css';
+@import '@fontsource/outfit/700.css';
+@import '@fontsource/outfit/800.css';
+
+@theme {
+  --font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+
+  /* Ink is the only text colour for body copy. */
+  --color-ink: #111827;
+
+  /* Action colour. */
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+
+  /* Compliant / positive. */
+  --color-secondary: #10b981;
+  --color-secondary-dark: #059669;
+  --color-secondary-tint: #ecfdf5;
+
+  /* Needs review / caution. */
+  --color-accent: #f59e0b;
+  --color-accent-dark: #d97706;
+  --color-accent-tint: #fffbeb;
+
+  /*
+    Failure colour. The supplied design system has no red, because it was
+    written for a marketing site. A compliance tool needs one, so this is
+    Red 500 from the same Tailwind family, used ONLY for failed checks and
+    potential violations.
+  */
+  --color-danger: #ef4444;
+  --color-danger-dark: #dc2626;
+  --color-danger-tint: #fef2f2;
+
+  /* Secondary surfaces and the few borders we allow. */
+  --color-muted: #f3f4f6;
+  --color-line: #e5e7eb;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-white font-sans text-ink antialiased;
+  }
+
+  /* Headings are geometric and tightly tracked. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  /*
+    There are no shadows in this design system, so focus cannot be shown with a
+    glow. A hard high-contrast ring is used instead.
+  */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2;
+  }
+}

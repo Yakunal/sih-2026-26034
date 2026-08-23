@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: legal-metrology-checker
+    env: python
+    buildCommand: 'cd frontend && npm install && npm run build && cd .. && pip install -r requirements.txt'
+    startCommand: 'cd backend && uvicorn main:app --host 0.0.0.0 --port '
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash

@@ -1,0 +1,223 @@
+﻿================================================================================
+           LEGAL METROLOGY COMPLIANCE CHECKER (SIH-26034)
+                  COMPLETE SYSTEM ARCHITECTURE GUIDE
+================================================================================
+
+1. EXECUTIVE SUMMARY & OBJECTIVE
+--------------------------------------------------------------------------------
+This project is an automated inspection system built for Smart India Hackathon
+(Problem Statement SIH26034). It verifies whether pre-packaged commodity labels
+comply with the Legal Metrology (Packaged Commodities) Rules, 2011 from a single
+photograph.
+
+The guiding engineering philosophy across the entire codebase is:
+"EXPLAINABILITY OVER COMPLEXITY"
+Every finding, score, and legal verdict must trace back to an exact rule ID,
+the observed text, and a few lines of plain Python code that anyone on the team
+can draw on a whiteboard in 5 minutes.
+
+
+================================================================================
+2. THE 2-STAGE PIPELINE (THE CORE SPLIT)
+================================================================================
+The most critical architectural decision is the strict separation between AI
+transcription and legal judgment.
+
++-----------------------------------------------------------------------------+
+|                                PRODUCT PHOTO                                |
+|                   (Uploaded by user or chosen from demo)                    |
++-------------------------------------+---------------------------------------+
+                                      |
+                                      v
++-----------------------------------------------------------------------------+
+|                        STAGE 1: AI EXTRACTION (OCR)                         |
+|                           [backend/ai_service.py]                           |
+|                                                                             |
+|  - Powered by Google Gemini Multimodal Vision API (temperature = 0).        |
+|  - Sole Responsibility: Answer "WHAT TEXT IS PRINTED ON THIS PACKAGE?"      |
+|  - Returns strict JSON matching the ExtractedData Pydantic schema.          |
+|  - Strict Prompt Guardrails: NEVER guess, complete, or infer missing text;  |
+|    return null for anything not clearly visible.                            |
+|  - The AI is EXPLICITLY FORBIDDEN from judging legal compliance.            |
++-------------------------------------+---------------------------------------+
+                                      |
+                                      v Plain Python Dictionary
++-----------------------------------------------------------------------------+
+|                     STAGE 2: DETERMINISTIC RULE ENGINE                      |
+|                     [backend/compliance.py + rules.json]                    |
+|                                                                             |
+|  - Zero AI, zero machine learning, zero randomness.                         |
+|  - Sole Responsibility: Answer "DOES THAT TEXT SATISFY STATUTORY RULES?"     |
+|  - Evaluates 15 codified legal rules across 4 check types.                  |
+|  - Computes weighted compliance score (0 - 100).                            |
+|  - Resolves final status: COMPLIANT / NEEDS_REVIEW / POTENTIAL_VIOLATION.   |
++-------------------------------------+---------------------------------------+
+                                      |
+                                      v
++-----------------------------------------------------------------------------+
+|                        STORAGE & PRESENTATION LAYER                         |
+|                                                                             |
+|  - SQLite Database [backend/database.py]: Local persistence of scans.       |
+|  - FastAPI REST API [backend/main.py]: 10 clean endpoints.                  |
+|  - ReportLab PDF Engine [backend/report.py]: Generates official A4 report.  |
+|  - React 19 UI [frontend/src/]: Flat-design dashboard, scan & history views.|
++-----------------------------------------------------------------------------+
+
+Why This Split Matters:
+1. Reproducibility: The same image always produces the exact same verdict.
+2. Traceability: When an inspector asks why a package failed, the answer is a
+   rule ID, the exact string read, and the regex pattern that failed.
+3. Defensibility: Prevents LLM hallucinations from creating fake violations or
+   clearing illegal packages.
+
+
+================================================================================
+3. STEP-BY-STEP DATA FLOW LIFECYCLE OF A SCAN
+================================================================================
+When a user uploads an image on the website, here is the exact chronological path:
+
+1. Browser / Client Side (frontend/src/pages/Scan.tsx):
+   - User selects an image (JPEG/PNG/WEBP).
+   - If image > 2 MB, the browser automatically resizes it to max 1920px (crisp HD)
+     using HTML5 Canvas, reducing a 10MB photo to ~400KB in 50ms.
+   - Sends multipart/form-data POST request to /api/scan.
+
+2. API Gateway & Validation (backend/main.py):
+   - Validates file type and size.
+   - Saves image to backend/uploads/ with timestamped unique filename.
+
+3. Vision Transcription (backend/ai_service.py):
+   - Sends image bytes to Gemini API with structured output schema (ExtractedData).
+   - Automatically falls back across models (gemini-3.6-flash -> gemini-3.5-flash)
+     if Google servers hit high demand.
+   - Receives JSON with 12 declaration fields + image quality indicators.
+
+4. Rule Engine Evaluation (backend/compliance.py):
+   - Iterates through 15 legal rules in backend/rules.json.
+   - Dispatches each rule to its check handler.
+   - Calculates score: round(100 * passed_weight / scoreable_weight).
+   - Resolves status based on absence vs. visible defect logic.
+
+5. Plain-Language Explanation (Optional, backend/ai_service.py):
+   - Sends the rule engine findings to Gemini to generate an 80-word plain
+     English summary paragraph for inspectors. Never changes verdicts.
+
+6. Database Storage (backend/database.py):
+   - Inserts record into SQLite inspections table with full JSON snapshots.
+
+7. Response & PDF Generation:
+   - Returns full InspectionDetail JSON to the React frontend.
+   - User redirected to /result/:id displaying photo beside extracted table.
+   - User can click "Download PDF Report" to trigger backend/report.py which
+     dynamically generates an official A4 ReportLab PDF document.
+
+
+================================================================================
+4. DETAILED COMPONENT BREAKDOWN
+================================================================================
+
+A. THE RULE ENGINE & CHECK TYPES (backend/compliance.py)
+--------------------------------------------------------------------------------
+The engine defines four check types:
+
+1. "presence" (7 rules, weight = 2 each):
+   - Checks if a mandatory declaration exists on the label.
+   - Handles legal alternatives via alt_fields (e.g. LM001 accepts manufacturer
+     OR packer OR importer name).
+
+2. "format" (4 rules, weight = 1 each):
+   - If the declaration is present, tests it against statutory regex patterns:
+     * LM008: MRP tax wording -> (?i)incl[a-z.]*\\s*(of\\s*)?all\\s*tax
+     * LM009: Standard metric units -> g, kg, ml, l (rejects "gms", "gm", "ltr")
+     * LM010: Month & year date format -> MM/YYYY or Month YYYY (rejects bare "2026")
+     * LM011: Consumer care contact -> Valid phone or email address
+   - Note: If a field is missing, format returns NOT_APPLICABLE (not FAIL) so
+     the product is not penalized twice for a single absence.
+
+3. "conditional_presence" (1 rule, weight = 1):
+   - LM012: Country of Origin only applies if an importer is declared. If no
+     importer is found, rule is NOT_APPLICABLE.
+
+4. "manual" (3 rules, weight = 0, never scored):
+   - LM013 (minimum letter height in mm), LM014 (prominence on display panel),
+     and LM015 (permitted standard pack sizes).
+   - Cannot honestly be measured from a 2D smartphone photo without scale bars.
+   - ALWAYS returns REVIEW ("Requires physical verification") instead of
+     fabricating a measurement.
+
+Status Resolution Logic:
+- COMPLIANT: All scoreable checks passed, image quality is good & legible.
+- NEEDS_REVIEW: One or two declarations missing (they might be on unphotographed
+  back panels), or image is blurry/partial.
+- POTENTIAL_VIOLATION: A visible defect was found on the label (e.g. "100 gms"),
+  OR 3 or more mandatory declarations are absent simultaneously.
+
+
+B. BACKEND DATA STRUCTURES (backend/models.py)
+--------------------------------------------------------------------------------
+Pydantic contracts enforce strict types across the system:
+- ExtractedData: Holds the 12 label fields (net_quantity, mrp, dates, etc.)
+  + image_quality, all_declarations_legible, overall_confidence.
+- RuleCheck: Result of one rule check (PASS, FAIL, REVIEW, NOT_APPLICABLE).
+- ComplianceResult: Overall score (0-100), status, status reason, tally counts.
+- InspectionDetail: Complete persistent inspection with timestamp, image URL,
+  extracted data, rule checks, and optional explanation.
+
+
+C. STORAGE LAYER (backend/database.py)
+--------------------------------------------------------------------------------
+- Built with Python standard sqlite3 module — zero ORM overhead.
+- Single table: inspections.
+- Columns: id, product_name, manufacturer, scan_date, score, status,
+  image_path, extracted_json, checks_json, explanation, source, model_used.
+- In cloud/serverless environments (e.g. Vercel), automatically points writable
+  database and uploads to /tmp.
+
+
+D. PDF REPORT GENERATOR (backend/report.py)
+--------------------------------------------------------------------------------
+- Uses ReportLab Platypus layout engine.
+- Renders professional A4 inspection certificate:
+  * Solid color header band matching compliance status (Emerald/Amber/Red).
+  * Product and manufacturer metadata table.
+  * Extracted declarations table with detection status.
+  * Complete rule-by-rule audit table with legal basis and statutory reasons.
+  * Embedded high-resolution photograph of the product label.
+  * Statutory disclaimers and gazette citations.
+
+
+E. FRONTEND ARCHITECTURE (frontend/src/)
+--------------------------------------------------------------------------------
+- Tech Stack: React 19 + TypeScript + Vite + Tailwind CSS v4.
+- Typography: Outfit geometric sans-serif (bundled locally for offline use).
+- Design System: Flat design, bold color blocking, zero artificial drop shadows.
+- Pages:
+  * Dashboard.tsx: Aggregated metrics, compliance ratio, most common violations.
+  * Scan.tsx: Image uploader with progress state + 4 prepared demo product cards.
+  * Result.tsx: Side-by-side evidence inspection (photo beside extracted table)
+    and rule breakdown.
+  * History.tsx: Server-side filtered inspection history table.
+  * Rules.tsx: Interactive statutory rule catalog and scoring formula guide.
+
+
+================================================================================
+5. HACKATHON DEMO & EVALUATION SUMMARY
+================================================================================
+Key talking points for judges:
+
+Q: "Where does AI stop and your logic start?"
+A: The AI only transcribes what the label says into text fields. Every compliance
+   decision, score, and legal status is computed by plain deterministic Python.
+
+Q: "Why not let AI decide compliance directly?"
+A: LLMs hallucinate, suffer from non-deterministic outputs, and cannot be legally
+   audited. Our rule engine provides 100% reproducible, verifiable verdicts.
+
+Q: "How do you handle bad photos or hidden panels?"
+A: Absence of evidence is not evidence of a defect. If a declaration is unseen,
+   we flag it as NEEDS_REVIEW instead of falsely claiming a legal violation.
+
+Q: "Can this run without internet or API quota?"
+A: Yes. Demo Mode uses cached extraction with a 100% live rule engine, database,
+   and PDF generator, operating completely offline.
+================================================================================

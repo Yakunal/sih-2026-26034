@@ -112,6 +112,59 @@ export default function Scan() {
     if (fileInput.current) fileInput.current.value = ''
   }
 
+  async function compressImageIfNeeded(imageFile: File, maxDim = 1920, quality = 0.85): Promise<File> {
+    // If file is already small (under 2 MB), no compression needed
+    if (imageFile.size <= 2 * 1024 * 1024) return imageFile
+
+    return new Promise((resolve) => {
+      const img = new Image()
+      const objectUrl = URL.createObjectURL(imageFile)
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl)
+        let { width, height } = img
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width)
+            width = maxDim
+          } else {
+            width = Math.round((width * maxDim) / height)
+            height = maxDim
+          }
+        }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(imageFile)
+          return
+        }
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(imageFile)
+              return
+            }
+            const compressed = new File([blob], imageFile.name.replace(/\.[^.]+$/, '.jpg'), {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            })
+            resolve(compressed)
+          },
+          'image/jpeg',
+          quality
+        )
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl)
+        resolve(imageFile)
+      }
+      img.src = objectUrl
+    })
+  }
+
   async function runUploadScan() {
     if (!file) return
     setBusy('upload')
@@ -119,10 +172,10 @@ export default function Scan() {
     setStep(0)
 
     try {
-      // The request is in flight: the backend is now uploading, extracting and
-      // checking. Step 1 covers the whole server-side wait.
+      // Step 1: upload (compress large images first to stay well within cloud payload limits)
       setStep(1)
-      const response = await scanImage(file)
+      const fileToUpload = await compressImageIfNeeded(file)
+      const response = await scanImage(fileToUpload)
       setStep(3)
       navigate(`/result/${response.inspection.id}`)
     } catch (issue) {

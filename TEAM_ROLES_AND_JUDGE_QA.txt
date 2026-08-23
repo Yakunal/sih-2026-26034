@@ -1,0 +1,287 @@
+﻿================================================================================
+           LEGAL METROLOGY COMPLIANCE CHECKER (SIH-26034)
+              5-MEMBER TEAM ROLE ALLOCATION & JUDGE Q&A
+================================================================================
+
+This document divides the entire project into 5 distinct, well-defined engineering
+roles for the hackathon team. For each member, it outlines the files they own,
+their exact technical contributions, anticipated judge questions, and detailed,
+defensible answers.
+
+
+================================================================================
+MEMBER 1: FRONTEND LEAD & UI/UX SPECIALIST
+================================================================================
+
+1. FILES OWNED & MANAGED:
+   - frontend/src/pages/Dashboard.tsx
+   - frontend/src/pages/Scan.tsx
+   - frontend/src/pages/Result.tsx
+   - frontend/src/pages/History.tsx
+   - frontend/src/pages/Rules.tsx
+   - frontend/src/ui.tsx
+   - frontend/src/index.css
+   - frontend/src/api.ts
+
+2. WHAT THEY BUILT (DETAILED TECHNICAL SUMMARY):
+   - Developed the Single Page Application using React 19, TypeScript, and Vite.
+   - Built the Flat Design Token System in Tailwind CSS v4 (@theme in index.css),
+     centralizing colors (Primary Blue #3B82F6, Emerald #10B981, Amber #F59E0B,
+     Danger Red #EF4444, Ink #111827) and local Outfit typography.
+   - Created shared reusable components in ui.tsx (StatusBadge, Band, Card, Button)
+     to enforce single source of truth for verdict styling.
+   - Designed the side-by-side evidence inspection layout on the Result page,
+     showing the photographed label right next to the extracted table so judges
+     can visually verify OCR accuracy.
+   - Implemented in-browser HTML5 Canvas image optimization in Scan.tsx: when a
+     user uploads a 10MB+ smartphone photo, the browser automatically resizes it
+     to max 1920px (crisp HD) and compresses it to ~400KB in 50ms, preventing
+     HTTP 413 Payload Too Large errors on cloud gateways.
+   - Built real-time upload progress state machine and server-side filtered history.
+
+3. ANTICIPATED JUDGE QUESTIONS & HOW TO ANSWER:
+
+   Q1: "How do you ensure the frontend does not expose the secret Gemini API key?"
+   A1: "The frontend never holds or sees the API key. All API calls in api.ts use
+        relative paths (e.g. /api/scan). In local dev, Vite's proxy forwards requests
+        to port 8000. In production on Vercel, requests are routed to our serverless
+        Python backend. The backend is the only entity that reads GEMINI_API_KEY from
+        server environment variables and communicates with Google."
+
+   Q2: "How does your UI handle heavy 10MB-15MB camera photos on slow mobile networks?"
+   A2: "In Scan.tsx, we implemented client-side image compression using browser
+        Canvas. Before sending bytes over the network, if the file exceeds 2MB, the
+        browser resizes it to a maximum dimension of 1920px with JPEG quality 0.85.
+        This shrinks a 10MB photo to ~400KB in 50 milliseconds while preserving 100%
+        character sharpness for OCR. Uploads take less than a second even on 4G."
+
+   Q3: "Why did you choose a Flat Design system without shadows or gradients?"
+   A3: "Our design philosophy matches modern industrial and legal dashboards: confident
+        reduction and zero artificial depth. Hierarchy is established purely through
+        scale, typography weight, and high-contrast color blocking (Green = Pass,
+        Amber = Review, Red = Violation). This avoids clutter and makes compliance
+        data immediately scannable for field inspectors."
+
+   Q4: "How does client-side routing work when a user refreshes /scan or /history?"
+   A4: "We configured Vercel routes with handle: filesystem and a SPA catch-all
+        fallback to /index.html. When a direct URL or browser refresh occurs, Vercel
+        serves the static assets first, and routes non-file paths to index.html where
+        React Router mounts the correct page view."
+
+
+================================================================================
+MEMBER 2: RULE ENGINE ARCHITECT & STATUTORY LOGIC SPECIALIST
+================================================================================
+
+1. FILES OWNED & MANAGED:
+   - backend/compliance.py
+   - backend/rules.json
+   - sample_data/legal_metrology_pc_rules_2011.pdf
+
+2. WHAT THEY BUILT (DETAILED TECHNICAL SUMMARY):
+   - Designed and built the deterministic Python Rule Engine that forms the core
+     intellectual property of this project.
+   - Codified 15 statutory requirements from the Legal Metrology (Packaged
+     Commodities) Rules, 2011 into rules.json.
+   - Implemented the 4 distinct check types:
+     * presence: Verifies mandatory declarations and alternative fields (LM001-LM007).
+     * format: Regex pattern matching for metric units (LM009), MRP tax wording (LM008),
+       date structures (LM010), and consumer care contact routes (LM011).
+     * conditional_presence: Country of Origin (LM012) only triggered if an importer is named.
+     * manual: Letter height in mm (LM013), display prominence (LM014), and pack sizes (LM015).
+   - Designed the weighted scoring formula:
+     Score = round(100 * (Passed Weights) / (Scoreable Weights))
+     Excluding REVIEW and NOT_APPLICABLE checks from both numerator and denominator.
+   - Formulated the legal verdict hierarchy:
+     * Absence of Evidence -> NEEDS_REVIEW (declaration might be on an unseen panel).
+     * Evidence of Defect -> POTENTIAL_VIOLATION (visible error like '100 gms' or bad MRP).
+     * Escalation Guard: 3+ missing mandatory items escalates to POTENTIAL_VIOLATION.
+
+3. ANTICIPATED JUDGE QUESTIONS & HOW TO ANSWER:
+
+   Q1: "Why is the AI not allowed to decide whether a package is compliant?"
+   A1: "Legal determinations require 100% reproducibility, auditability, and
+        traceability. Language models can hallucinate, exhibit stochastic output
+        variations, and cannot be cited in legal court proceedings. In our system,
+        the AI is restricted solely to OCR/transcription. Every legal finding is
+        computed by deterministic Python in compliance.py against codified rules."
+
+   Q2: "Why does a missing MRP not fail the MRP format rule as well?"
+   A2: "That is the double-penalty problem. In compliance.py, _check_format() returns
+        NOT_APPLICABLE if the field is missing, because the presence rule (LM006)
+        already penalized the absence. Failing it a second time would distort the
+        score by punishing one defect twice."
+
+   Q3: "Why does your system return 'Needs Review' for letter height (Rule 9)?"
+   A3: "Rule 9 and the Second Schedule require physical letter height in millimetres
+        proportional to the area of the Principal Display Panel. It is physically
+        impossible to derive an accurate millimeter measurement from an uncalibrated
+        smartphone photo without a known physical scale reference. Inventing a pixel
+        estimate would be scientifically dishonest; flagging it for physical
+        verification is the legally defensible engineering approach."
+
+   Q4: "What is your logic for deciding between Needs Review and Potential Violation?"
+   A4: "A single photograph shows only one or two panels of a box. An absent
+        declaration might simply be printed on the back face, so one missing item yields
+        NEEDS_REVIEW (escalates: false). However, if a declaration IS visible and printed
+        illegally (e.g. '100 gms' instead of '100 g'), we have photographic proof of a
+        defect, yielding POTENTIAL_VIOLATION (escalates: true). If 3 or more mandatory
+        declarations are missing, the engine escalates because an incomplete label is
+        statistically more probable than missing 3 items on a photo."
+
+
+================================================================================
+MEMBER 3: MULTIMODAL AI & VISION EXTRACTION ENGINEER
+================================================================================
+
+1. FILES OWNED & MANAGED:
+   - backend/ai_service.py
+   - backend/models.py (ExtractedData schema)
+   - backend/check_ai.py
+
+2. WHAT THEY BUILT (DETAILED TECHNICAL SUMMARY):
+   - Integrated Google GenAI Multimodal SDK with Gemini vision models (gemini-3.6-flash).
+   - Authored the zero-temperature vision extraction prompt with strict legal guardrails:
+     \"Extract ONLY visible declarations; return null for unseen fields; do NOT guess,
+     complete, or judge legal compliance.\"
+   - Enforced schema validation using Pydantic models (ExtractedData) passed directly
+     to response_schema, forcing Gemini to return strongly typed JSON with zero manual parsing.
+   - Built automatic multi-model fallback resiliency in ai_service.py: if the primary
+     model encounters high demand (HTTP 503) or rate limits, the client automatically
+     cascades across gemini-3.6-flash -> gemini-3.5-flash -> gemini-3.5-flash-lite.
+   - Implemented photo quality diagnostics: forced Gemini to grade image_quality
+     ('good', 'blurry', 'partial'), all_declarations_legible, and overall_confidence.
+   - Developed the check_ai.py diagnostic CLI to probe model accessibility and test OCR.
+
+3. ANTICIPATED JUDGE QUESTIONS & HOW TO ANSWER:
+
+   Q1: "How do you prevent the AI from hallucinating a manufacturer or address?"
+   A1: "Three layers of defense in ai_service.py: First, the system prompt explicitly
+        mandates: 'If you cannot clearly see a declaration, return null for it. Do not
+        guess, complete, or infer.' Second, we enforce temperature = 0. Third, we pass
+        our Pydantic ExtractedData schema into response_schema, which forces the model's
+        logits to conform to our exact JSON schema where all fields default to None."
+
+   Q2: "What happens if an inspector uploads a blurry or poorly lit photo?"
+   A2: "The AI grades the photo itself, populating image_quality as 'blurry' and
+        all_declarations_legible as false. In compliance.py, the blurry-image guard
+        executes first: if image_quality is blurry, the system refuses to assert any
+        finding and returns NEEDS_REVIEW, advising the inspector to re-photograph in
+        better light or inspect physically."
+
+   Q3: "How do you handle Google AI Studio rate limits or temporary outages?"
+   A3: "We implemented automatic model fallback in ai_service.py. If gemini-3.6-flash
+        encounters a 503 capacity spike or 429 quota limit, the backend catches the
+        exception and immediately retries with gemini-3.5-flash or gemini-3.5-flash-lite.
+        If all internet access fails, the app seamlessly supports Demo Mode."
+
+   Q4: "What does the second AI call (explain_findings) do?"
+   A4: "explain_findings() takes the rule engine's ALREADY-FINAL findings as text and
+        restates them in one short, plain English paragraph (under 80 words) for the
+        inspector. It is purely cosmetic, cannot alter any verdict or score, and if
+        it fails for any reason, the scan still succeeds using our hand-written reasons."
+
+
+================================================================================
+MEMBER 4: BACKEND API, DATABASE & CLOUD INFRASTRUCTURE ENGINEER
+================================================================================
+
+1. FILES OWNED & MANAGED:
+   - backend/main.py
+   - backend/database.py
+   - backend/models.py (InspectionSummary, InspectionDetail, Stats)
+   - api/index.py
+   - vercel.json
+   - render.yaml
+
+2. WHAT THEY BUILT (DETAILED TECHNICAL SUMMARY):
+   - Built the FastAPI asynchronous REST API application (~10 endpoints) with
+     Pydantic validation, CORS middleware, and automatic OpenAPI Swagger docs (/docs).
+   - Designed the raw SQLite3 database layer in database.py: single inspections table
+     storing metadata, extracted JSON snapshots, rule engine JSON, and timestamps.
+   - Built optimized SQL aggregation queries for the dashboard (/api/stats): totals per
+     status, compliance ratio, average score, and top 5 most frequently violated rules.
+   - Architected the dual-builder Vercel deployment: configured vercel.json with
+     @vercel/static-build (React frontend) and @vercel/python (FastAPI backend).
+   - Implemented cloud-aware storage routing: detected serverless environments (VERCEL=1)
+     and redirected writable SQLite paths and file uploads to /tmp.
+   - Configured static Single Page Application (SPA) asset serving and fallback routing.
+
+3. ANTICIPATED JUDGE QUESTIONS & HOW TO ANSWER:
+
+   Q1: "Why did you choose raw SQLite3 instead of an ORM like SQLAlchemy or Django?"
+   A1: "An inspection is a single self-contained atomic event: one image, one extraction,
+        and one set of rule results. There are no complex relational joins. Writing raw
+        SQL in database.py keeps the code 100% transparent and explainable to judges.
+        An ORM would add unnecessary abstraction and latency for a single-table schema."
+
+   Q2: "Why do you store 'score' and 'status' in separate columns if they exist in JSON?"
+   A2: "That is intentional database denormalization. By storing score and status as
+        indexed top-level SQL columns, the dashboard endpoint (/api/stats) computes
+        counts, averages, and compliance percentages using fast SQL aggregates (SUM, AVG)
+        without having to deserialize and parse JSON strings across thousands of rows."
+
+   Q3: "How does your backend handle serverless statelessness on cloud platforms like Vercel?"
+   A3: "On Vercel, the file system is read-only except /tmp. In database.py and report.py,
+        we dynamically set DATA_DIR to /tmp when os.getenv('VERCEL') is present. The
+        database initializes and seeds itself in /tmp on container spin-up, ensuring
+        zero file-permission crashes."
+
+   Q4: "How is your API documented and tested?"
+   A4: "FastAPI automatically generates interactive OpenAPI/Swagger documentation at
+        /docs directly from our Pydantic models. You can test every endpoint, upload
+        images, and inspect response schemas directly in the browser."
+
+
+================================================================================
+MEMBER 5: PDF REPORT ENGINE, QA & DEMO SUITE ENGINEER
+================================================================================
+
+1. FILES OWNED & MANAGED:
+   - backend/report.py
+   - backend/test_compliance.py
+   - backend/seed_data.py
+   - sample_data/demo_products.json
+   - sample_data/generate_demo_images.py
+
+2. WHAT THEY BUILT (DETAILED TECHNICAL SUMMARY):
+   - Developed the A4 PDF Compliance Report generator using ReportLab Platypus engine.
+   - Designed the document hierarchy matching the web design system:
+     * Dynamic color-coded status header band (Emerald for Compliant, Amber for Review, Red for Violation).
+     * Two-column inspection metadata and AI provenance breakdown.
+     * Detected declarations audit table with Yes/No status indicators.
+     * Comprehensive Rule Checks table displaying Rule ID, Reference, Checked Requirement, Result, and Legal Basis.
+     * Proportionally scaled product photograph embedded on Page 2 via Pillow.
+     * Implemented gazette citations and statutory legal disclaimers.
+   - Authored the 58-assertion deterministic test suite in test_compliance.py proving
+     rules, demo fixtures, regex format patterns, and edge cases with zero external test bloat.
+   - Created the offline Demo Suite: engineered sample_data/generate_demo_images.py using
+     Pillow to draw 4 synthetic labels containing deliberate statutory violations.
+   - Developed seed_data.py to populate 20 realistic inspection records through the live engine.
+
+3. ANTICIPATED JUDGE QUESTIONS & HOW TO ANSWER:
+
+   Q1: "How do you prove that your compliance engine is mathematically reliable?"
+   A1: "We built a 58-assertion test suite in test_compliance.py that runs without
+        framework overhead. It proves: (1) All 15 rules are valid and uniquely weighted,
+        (2) The 4 demo products produce their exact documented status and score every time,
+        (3) 29 format regex cases correctly accept standard units ('100 g') and reject
+        non-standard units ('100 gms', '1 ltr'), and (4) Blurry photos always fail-safe."
+
+   Q2: "How does the PDF generation work? Does it require a heavy headless browser?"
+   A2: "No headless browsers (Puppeteer/Chromium) are used. We use ReportLab Platypus,
+        a pure-Python programmatic layout engine. It builds documents out of flowables
+        (Paragraphs, Tables, Images) in under 200 milliseconds with minimal memory usage,
+        making it ideal for lightweight serverless and cloud deployments."
+
+   Q3: "How does Demo Mode work if there is no internet during our presentation?"
+   A3: "Demo Mode caches only the initial transcription step in sample_data/demo_products.json.
+        The rule engine, scoring algorithm, SQLite database write, and ReportLab PDF
+        generation all execute 100% live. It requires zero API keys and zero internet."
+
+   Q4: "How do you ensure judges know what is sample demo data versus a real live scan?"
+   A4: "Complete data provenance transparency: every record carries a 'source' column
+        ('live_ai', 'demo_cached', or 'seed'). The UI displays prominent badges ('Demo Result'
+        or 'Sample Data'), the dashboard notes when sample data is included, and the PDF
+        report prints an official watermark and disclaimer."
+================================================================================

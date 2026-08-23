@@ -3,15 +3,15 @@
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {
-      "source": "/api/:match*",
+      "source": "/api/(.*)",
       "destination": "/api/index.py"
     },
     {
-      "source": "/uploads/:match*",
+      "source": "/uploads/(.*)",
       "destination": "/api/index.py"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/|uploads/|assets/|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]
